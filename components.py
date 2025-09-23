@@ -35,24 +35,18 @@ def display_select_mode():
             label_visibility="visible"
         )
         
-        # 選択されたモードに応じて入力例を表示
+        # 両方のモードの入力例を常に表示
         st.markdown("### 入力例")
         
-        if st.session_state.mode == ct.ANSWER_MODE_1:
-            # 「社内文書検索」の入力例
-            st.markdown("**社内文書検索の使用例：**")
-            st.info("入力内容と関連性が高い社内文書のありかを検索できます。")
-            st.code("社員の育成方針に関するMTGの議事録", wrap_lines=True, language=None)
-            st.code("マーケティング戦略について", wrap_lines=True, language=None)
-            st.code("来期の売上目標", wrap_lines=True, language=None)
+        # 「社内文書検索」の入力例
+        st.markdown("**社内文書検索の使用例：**")
+        st.info("入力内容と関連性が高い社内文書のありかを検索できます。")
+        st.code("社員の育成方針に関するMTGの議事録", wrap_lines=True, language=None)
         
-        elif st.session_state.mode == ct.ANSWER_MODE_2:
-            # 「社内問い合わせ」の入力例
-            st.markdown("**社内問い合わせの使用例：**")
-            st.info("質問・要望に対して、社内文書の情報をもとに回答を得られます。")
-            st.code("人事部に所属している従業員情報を一覧化して", wrap_lines=True, language=None)
-            st.code("来年度の採用計画はどうなっていますか？", wrap_lines=True, language=None)
-            st.code("福利厚生制度について教えて", wrap_lines=True, language=None)
+        # 「社内問い合わせ」の入力例
+        st.markdown("**社内問い合わせの使用例：**")
+        st.info("質問・要望に対して、社内文書の情報をもとに回答を得られます。")
+        st.code("人事部に所属している従業員情報を一覧化して", wrap_lines=True, language=None)
 
 
 def display_initial_ai_message():
