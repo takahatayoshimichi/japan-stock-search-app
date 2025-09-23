@@ -51,12 +51,14 @@ def display_select_mode():
 
 def display_initial_ai_message():
     """
-    AIメッセージの初期表示（簡潔版）
+    AIメッセージの初期表示（背景色付き）
     """
     with st.chat_message("assistant"):
-        st.markdown("こんにちは！私は社内文書の情報をもとに回答する生成AIチャットボットです。")
-        st.markdown("左側のサイドバーで利用目的を選択し、下記のチャット欄からメッセージを送信してください。")
-        st.success("準備完了！ご質問をお聞かせください。", icon="✨")
+        # 薄い緑の背景でメインメッセージを表示
+        st.success("こんにちは。私は社内文書の情報をもとに回答する生成AIチャットボットです。サイドバーで利用目的を選択し、画面下部のチャット欄からメッセージを送信してください。")
+        
+        # 薄い黄色の背景で注意メッセージを表示
+        st.warning("⚠️ 具体的に入力した方が期待通りの回答を得やすいです")
 
 
 def display_conversation_log():
