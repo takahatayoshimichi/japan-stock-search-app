@@ -12,7 +12,12 @@ import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
-from lxml import etree
+try:
+    from lxml import etree
+    LXML_AVAILABLE = True
+except ImportError:
+    import xml.etree.ElementTree as etree
+    LXML_AVAILABLE = False
 
 from constants import (
     EDINET_API, EDINET_FORMS, XBRL_TAGS_LOCAL,
@@ -80,7 +85,15 @@ def edinet_download_zip(doc_id: str, api_key: str) -> bytes:
 # ---------- XBRL（lxmlで軽量パース） ----------
 def _localname(tag: str) -> str:
     try:
-        return etree.QName(tag).localname
+        if LXML_AVAILABLE:
+            return etree.QName(tag).localname
+        else:
+            # 標準ライブラリでの代替実装
+            if "}" in tag:
+                return tag.split("}", 1)[1]
+            if ":" in tag:
+                return tag.split(":", 1)[1]
+            return tag
     except Exception:
         # fallback
         if "}" in tag:
@@ -120,7 +133,12 @@ def parse_xbrl_series(zip_bytes: bytes) -> Dict[str, Dict[dt.date, float]]:
     for name in xbrl_files:
         with zf.open(name) as f:
             try:
-                root = etree.parse(f).getroot()
+                if LXML_AVAILABLE:
+                    root = etree.parse(f).getroot()
+                else:
+                    # 標準ライブラリの場合はバイトデータを文字列に変換
+                    content = f.read().decode('utf-8', errors='ignore')
+                    root = etree.fromstring(content)
             except Exception:
                 continue
         ctx = _parse_contexts(root)
