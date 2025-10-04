@@ -57,8 +57,12 @@ def render_auto_ingest_section(ticker: str, edinet_api_key: str, price_df: pd.Da
                     st.write("- 休日や祝日で新しい書類が提出されていない")
                     st.write("")
                     st.write("**推奨する対処法:**")
-                    st.write("1. 銘柄コードを確認する（例: トヨタ = 7203.T）")
-                    st.write("2. 他の大手企業で試してみる（例: 9984.T = ソフトバンク）")
+                    st.write("1. 以下の銘柄で試してみる:")
+                    st.write("   - 7203.T (トヨタ自動車)")
+                    st.write("   - 9984.T (ソフトバンクグループ)")
+                    st.write("   - 8306.T (三菱UFJフィナンシャル・グループ)")
+                    st.write("   - 4519.T (中外製薬)")
+                    st.write("2. 銘柄コードを4桁で入力してみる（例: 7203）")
                     st.write("3. 数日後に再度試す")
                 
                 return None, None, None, None
