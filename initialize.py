@@ -32,19 +32,6 @@ def init_sidebar(env_defaults: dict) -> Settings:
         ticker = st.text_input("銘柄コード（yfinance形式）", DEFAULT_TICKER)
         years = st.slider("期間（年）", 1, 10, DEFAULT_YEARS)
 
-        # APIキーの状態表示（値は表示しない）
-        st.divider()
-        st.subheader("API接続状況")
-        
-        openai_status = "✅ 設定済み" if env_defaults.get("OPENAI_API_KEY") else "❌ 未設定"
-        edinet_status = "✅ 設定済み" if env_defaults.get("EDINET_API_KEY") else "❌ 未設定"
-        
-        st.write(f"OpenAI API: {openai_status}")
-        st.write(f"EDINET API: {edinet_status}")
-        
-        if not env_defaults.get("EDINET_API_KEY"):
-            st.warning("EDINET API キーが設定されていません。財務データの自動取得機能が利用できません。")
-
     return Settings(
         ticker=ticker.strip(),
         years=int(years),
