@@ -71,26 +71,61 @@ def edinet_pick_latest_doc_debug(results: list, sec_code_4: Optional[str], searc
         # より柔軟なマッチング
         doc_sec_code = r.get("secCode") or ""
         doc_title = r.get("title") or ""
+        doc_description = r.get("docDescription") or ""
         
-        # 完全一致
-        if doc_sec_code == sec_code_4:
-            return True
+        # 検索候補となる文字列
+        search_targets = [doc_sec_code, doc_title, doc_description]
         
-        # タイトルに含まれているかチェック
-        if sec_code_4 in doc_title:
-            return True
+        # 様々なパターンでマッチング
+        patterns_to_check = [
+            sec_code_4,                    # 7203
+            sec_code_4.zfill(4),          # 7203
+            f"{sec_code_4}.T",            # 7203.T
+            f"{sec_code_4}0",             # 72030（EDINETで使われることがある）
+        ]
         
-        # 証券コードが4桁でない場合の処理
-        if len(sec_code_4) < 4:
-            padded_code = sec_code_4.zfill(4)
-            if doc_sec_code == padded_code or padded_code in doc_title:
-                return True
+        for pattern in patterns_to_check:
+            for target in search_targets:
+                if pattern in target:
+                    return True
         
         return False
     
     # 該当する証券コードのドキュメントを全て収集
     matching_docs = [r for r in results if match_sec(r)]
     print(f"日付 {search_date}: 証券コード {sec_code_4} に一致するドキュメント: {len(matching_docs)}件")
+    
+    # マッチしない場合は、類似する証券コードを表示
+    if not matching_docs and sec_code_4:
+        similar_codes = set()
+        for r in results[:50]:  # 最初の50件をチェック
+            sec_code = r.get("secCode")
+            if sec_code and sec_code.startswith(sec_code_4[0]):  # 最初の数字が同じもの
+                similar_codes.add(sec_code)
+        
+        if similar_codes:
+            print(f"  類似する証券コード例: {sorted(list(similar_codes))[:10]}")
+        
+        # 企業名での検索も試す
+        company_names = {
+            "7203": ["トヨタ", "TOYOTA"],
+            "8306": ["三菱UFJ", "MUFG"],
+            "9984": ["ソフトバンク", "SoftBank"],
+            "6758": ["ソニー", "SONY"],
+        }
+        
+        if sec_code_4 in company_names:
+            for name in company_names[sec_code_4]:
+                name_matches = [r for r in results if name in (r.get("title") or "") or name in (r.get("docDescription") or "")]
+                if name_matches:
+                    print(f"  企業名 '{name}' での検索: {len(name_matches)}件")
+                    # 企業名でマッチした場合は、最初のものを返す
+                    for ord_code, form_code, form_name in EDINET_FORMS:
+                        tier = [r for r in name_matches if r.get("ordinanceCode")==ord_code and r.get("formCode")==form_code]
+                        if tier:
+                            tier.sort(key=lambda x: (x.get("submitDateTime") or x.get("periodEnd") or ""), reverse=True)
+                            print(f"  企業名で見つかった書類: {form_name} - {tier[0].get('docDescription', 'N/A')}")
+                            return tier[0]
     
     if matching_docs:
         for i, doc in enumerate(matching_docs[:3]):  # 最初の3件を表示
@@ -289,7 +324,7 @@ def autofill_financials_from_edinet(ticker: str, api_key: str) -> Tuple[Dict, Di
     
     # まず最近の数日間で詳細にチェック
     test_results = []
-    for i in range(0, min(5, search_days)):
+    for i in range(0, min(10, search_days)):  # 最初の10日をチェック
         d = (today - dt.timedelta(days=i)).isoformat()
         try:
             idx = edinet_list_documents(d, api_key)
@@ -297,13 +332,13 @@ def autofill_financials_from_edinet(ticker: str, api_key: str) -> Tuple[Dict, Di
             test_results.append((d, len(results)))
             
             # その日のドキュメントから証券コードをサンプル表示
-            if i == 0 and results:  # 最新日のみ詳細表示
+            if i == 1 and results:  # 2日目（平日の可能性が高い）で詳細表示
                 sample_codes = []
-                for r in results[:20]:  # 最初の20件をチェック
+                for r in results[:30]:  # 最初の30件をチェック
                     sec_code = r.get("secCode")
                     if sec_code:
                         sample_codes.append(sec_code)
-                print(f"日付 {d}: 証券コードの例: {sample_codes[:10]}")
+                print(f"日付 {d}: 証券コードの例: {sample_codes[:15]}")
             
             # 実際の検索を実行
             doc = edinet_pick_latest_doc_debug(results, sec4, d)
