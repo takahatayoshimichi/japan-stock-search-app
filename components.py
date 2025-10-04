@@ -29,19 +29,24 @@ def render_price_section(ticker: str, years: int):
 def render_auto_ingest_section(ticker: str, edinet_api_key: str, price_df: pd.DataFrame):
     st.subheader("2) EDINET 自動取り込み（手入力なし）")
     st.caption("直近の有報/四半期/半期を自動検出→XBRLから主要KPIを抽出します。")
+    
     if not edinet_api_key:
         st.info("EDINET API Key を .env に設定してください。")
         return None, None, None, None
-    if st.button("EDINET から自動取得して計算"):
-        try:
-            current, previous, cur_date, prev_date = autofill_financials_from_edinet(ticker, edinet_api_key)
-            # 株価を充填
-            if price_df is not None and not price_df.empty:
-                current["price"] = float(price_df["close"].iloc[-1])
-            st.success(f"取得完了：当期={cur_date} 前期={prev_date}")
-            return current, previous, cur_date, prev_date
-        except Exception as e:
-            st.warning(f"EDINET 取得エラー: {e}")
+    
+    if st.button("EDINET から自動取得して計算", key="edinet_fetch_button"):
+        with st.spinner("EDINET からデータを取得中..."):
+            try:
+                current, previous, cur_date, prev_date = autofill_financials_from_edinet(ticker, edinet_api_key)
+                # 株価を充填
+                if price_df is not None and not price_df.empty:
+                    current["price"] = float(price_df["close"].iloc[-1])
+                st.success(f"取得完了：当期={cur_date} 前期={prev_date}")
+                return current, previous, cur_date, prev_date
+            except Exception as e:
+                st.error(f"EDINET 取得エラー: {e}")
+                return None, None, None, None
+    
     return None, None, None, None
 
 def render_quant_tables(current: dict, previous: dict):

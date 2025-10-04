@@ -12,6 +12,12 @@ def init_page():
     st.set_page_config(page_title=APP_TITLE, page_icon="📈", layout="wide")
     st.title(APP_TITLE)
     st.caption(APP_SUBTITLE)
+    
+    # セッション状態の初期化
+    if 'financial_data' not in st.session_state:
+        st.session_state.financial_data = None
+    if 'price_data' not in st.session_state:
+        st.session_state.price_data = None
 
 def init_env() -> dict:
     load_dotenv()
