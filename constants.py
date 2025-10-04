@@ -6,7 +6,7 @@ from dataclasses import dataclass
 APP_TITLE = "📈 日本株 企業分析（EDINET v2 × yfinance）"
 APP_SUBTITLE = "手入力なし：EDINETから自動で主要KPIを抽出、株価はyfinanceで取得"
 
-DEFAULT_TICKER = "ANY"  # 任意の企業でテスト（証券コード無視モード）
+DEFAULT_TICKER = "7203.T"  # トヨタ自動車（確実に取得できる日本株）
 DEFAULT_YEARS = 5
 
 # EDINET v2

@@ -42,17 +42,61 @@ def fmt_num(x, digits=0):
 
 # ---------- 株価 ----------
 def get_price_data(ticker: str, years: int) -> pd.DataFrame:
-    end = dt.date.today()
-    start = end - dt.timedelta(days=365*years + 7)
-    df = yf.download(ticker, start=start.isoformat(), end=end.isoformat(), auto_adjust=True)
-    if isinstance(df, pd.DataFrame) and not df.empty:
-        # MultiIndex列の場合は最初のレベル（Price）を使用
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        df = df.reset_index()
-        # 列名を小文字に変換
-        df.columns = [col.lower() for col in df.columns]
-    return df
+    """株価データを取得（エラーハンドリング強化版）"""
+    try:
+        import time
+        
+        # ティッカーシンボルの正規化
+        ticker_clean = ticker.strip().upper()
+        
+        # 日本株の場合、.Tサフィックスを確認
+        if ticker_clean.isdigit() and len(ticker_clean) == 4:
+            ticker_clean = f"{ticker_clean}.T"
+        
+        print(f"株価データ取得開始: {ticker_clean}")
+        
+        # レート制限を避けるため少し待機
+        time.sleep(0.5)
+        
+        end = dt.date.today()
+        start = end - dt.timedelta(days=365*years + 7)
+        
+        df = yf.download(ticker_clean, start=start.isoformat(), end=end.isoformat(), auto_adjust=True)
+        
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            # MultiIndex列の場合は最初のレベル（Price）を使用
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            df = df.reset_index()
+            # 列名を小文字に変換
+            df.columns = [col.lower() for col in df.columns]
+            
+            print(f"✅ {ticker_clean}: {len(df)}日分のデータを取得")
+            if 'close' in df.columns:
+                print(f"   最新終値: {df['close'].iloc[-1]:.2f}")
+            
+            return df
+        else:
+            print(f"❌ {ticker_clean}: データが空です")
+            
+            # 代替案の提示
+            if ticker.isdigit():
+                print(f"💡 試してみる: {ticker}.T")
+            elif not ticker.endswith('.T') and len(ticker) == 4:
+                print(f"💡 試してみる: {ticker}.T")
+            
+            return pd.DataFrame()
+            
+    except Exception as e:
+        print(f"❌ 株価データ取得エラー ({ticker}): {e}")
+        
+        # 代替案の提示
+        if ticker.isdigit():
+            print(f"💡 試してみる代替ティッカー: {ticker}.T")
+        elif not ticker.endswith('.T') and len(ticker) == 4:
+            print(f"💡 試してみる代替ティッカー: {ticker}.T")
+        
+        return pd.DataFrame()
 
 # ---------- EDINET API ----------
 def edinet_list_documents(date: str, api_key: str) -> dict:
@@ -65,74 +109,113 @@ def edinet_list_documents(date: str, api_key: str) -> dict:
 def edinet_pick_latest_doc_debug(results: list, sec_code_4: Optional[str], search_date: str) -> Optional[dict]:
     """デバッグ情報付きのドキュメント検索関数"""
     
-    # まず、有価証券報告書、四半期報告書、半期報告書を探す（証券コード無視）
-    target_forms = []
-    for ord_code, form_code, form_name in EDINET_FORMS:
-        matching_forms = [r for r in results if r.get("ordinanceCode")==ord_code and r.get("formCode")==form_code]
-        if matching_forms:
-            target_forms.extend([(form_name, doc) for doc in matching_forms])
-    
-    print(f"日付 {search_date}: 対象書類の総数: {len(target_forms)}件")
-    
-    if target_forms and sec_code_4:
-        # 証券コードや企業名での絞り込み
-        def match_company(doc):
-            doc_sec_code = doc.get("secCode") or ""
-            doc_title = doc.get("title") or ""
-            doc_description = doc.get("docDescription") or ""
-            
-            # 検索候補となる文字列
-            search_targets = [doc_sec_code, doc_title, doc_description]
-            
-            # 証券コードでのマッチング
-            patterns_to_check = [
-                sec_code_4,                    # 4519
-                sec_code_4.zfill(4),          # 4519
-                f"{sec_code_4}.T",            # 4519.T
-                f"{sec_code_4}0",             # 45190
-            ]
-            
-            for pattern in patterns_to_check:
-                for target in search_targets:
-                    if pattern in target:
-                        return True
-            
-            # 企業名での検索
-            company_names = {
-                "7203": ["トヨタ", "TOYOTA", "豊田"],
-                "8306": ["三菱UFJ", "MUFG", "三菱ＵＦＪ"],
-                "9984": ["ソフトバンク", "SoftBank", "ソフトバンクグループ"],
-                "6758": ["ソニー", "SONY"],
-                "4519": ["中外製薬", "中外", "Chugai"],
-            }
-            
-            if sec_code_4 in company_names:
-                for name in company_names[sec_code_4]:
-                    for target in search_targets:
-                        if name in target:
-                            return True
-            
-            return False
+    # まず、全ての書類を種類別に分類
+    all_forms = {}
+    for r in results:
+        ord_code = r.get("ordinanceCode")
+        form_code = r.get("formCode")
+        form_key = f"{ord_code}-{form_code}"
         
-        # 企業名/証券コードでマッチングを試行
-        matching_companies = [(form_name, doc) for form_name, doc in target_forms if match_company(doc)]
-        
-        if matching_companies:
-            print(f"  企業マッチング成功: {len(matching_companies)}件")
-            for i, (form_name, doc) in enumerate(matching_companies[:3]):
-                print(f"    {i+1}. {form_name}: {doc.get('docDescription', 'N/A')} (証券コード: {doc.get('secCode', 'N/A')})")
+        if form_key not in all_forms:
+            all_forms[form_key] = []
+        all_forms[form_key].append(r)
+    
+    print(f"日付 {search_date}: 書類種類: {len(all_forms)}種類")
+    
+    # 書類種類を表示（上位5種類）
+    sorted_forms = sorted(all_forms.items(), key=lambda x: len(x[1]), reverse=True)
+    for i, (form_key, docs) in enumerate(sorted_forms[:5]):
+        example_doc = docs[0]
+        print(f"  {i+1}. {form_key}: {len(docs)}件 - 例: {example_doc.get('docDescription', 'N/A')[:50]}...")
+    
+    # 財務報告書らしきものを探す（より柔軟に）
+    financial_keywords = [
+        "有価証券報告書", "四半期報告書", "半期報告書", "決算短信", 
+        "Annual Report", "Quarterly Report", "財務諸表", "決算"
+    ]
+    
+    potential_docs = []
+    for form_key, docs in all_forms.items():
+        for doc in docs:
+            description = doc.get("docDescription") or ""
+            title = doc.get("title") or ""
             
-            # 最も新しいものを返す
-            best_match = max(matching_companies, key=lambda x: x[1].get("submitDateTime") or x[1].get("periodEnd") or "")
-            return best_match[1]
+            # 財務関連の書類かチェック
+            if any(keyword in description or keyword in title for keyword in financial_keywords):
+                potential_docs.append((form_key, doc))
+    
+    print(f"  財務関連書類候補: {len(potential_docs)}件")
+    
+    if potential_docs:
+        # 企業マッチングを試行（証券コードが指定されている場合）
+        if sec_code_4:
+            matching_companies = []
+            for form_key, doc in potential_docs:
+                if match_company(doc, sec_code_4):
+                    matching_companies.append((form_key, doc))
+            
+            if matching_companies:
+                print(f"    企業マッチング成功: {len(matching_companies)}件")
+                for i, (form_key, doc) in enumerate(matching_companies[:3]):
+                    print(f"      {i+1}. {form_key}: {doc.get('docDescription', 'N/A')} (証券コード: {doc.get('secCode', 'N/A')})")
+                
+                # 最も新しいものを返す
+                best_match = max(matching_companies, key=lambda x: x[1].get("submitDateTime") or x[1].get("periodEnd") or "")
+                return best_match[1]
+            else:
+                print(f"    企業マッチング失敗")
         else:
-            print(f"  企業マッチング失敗。利用可能な企業例:")
-            # ランダムに3つの企業例を表示
-            sample_companies = target_forms[:10]  # 最初の10件から
-            for i, (form_name, doc) in enumerate(sample_companies[:3]):
-                print(f"    例{i+1}: {doc.get('docDescription', 'N/A')} (証券コード: {doc.get('secCode', 'N/A')})")
+            # 証券コード無指定の場合は、最新の財務書類を返す
+            print(f"    証券コード無視モード: 最新の財務書類を取得")
+            latest_doc = max(potential_docs, key=lambda x: x[1].get("submitDateTime") or x[1].get("periodEnd") or "")
+            print(f"    選択: {latest_doc[0]} - {latest_doc[1].get('docDescription', 'N/A')}")
+            return latest_doc[1]
+        
+        # マッチしない場合の例を表示
+        print(f"    利用可能な財務書類例:")
+        for i, (form_key, doc) in enumerate(potential_docs[:3]):
+            print(f"      例{i+1}: {doc.get('docDescription', 'N/A')} (証券コード: {doc.get('secCode', 'N/A')})")
     
     return None
+
+def match_company(doc, sec_code_4):
+    """企業マッチング関数"""
+    doc_sec_code = doc.get("secCode") or ""
+    doc_title = doc.get("title") or ""
+    doc_description = doc.get("docDescription") or ""
+    
+    # 検索候補となる文字列
+    search_targets = [doc_sec_code, doc_title, doc_description]
+    
+    # 証券コードでのマッチング
+    patterns_to_check = [
+        sec_code_4,                    # 4519
+        sec_code_4.zfill(4),          # 4519
+        f"{sec_code_4}.T",            # 4519.T
+        f"{sec_code_4}0",             # 45190
+    ]
+    
+    for pattern in patterns_to_check:
+        for target in search_targets:
+            if pattern in target:
+                return True
+    
+    # 企業名での検索
+    company_names = {
+        "7203": ["トヨタ", "TOYOTA", "豊田"],
+        "8306": ["三菱UFJ", "MUFG", "三菱ＵＦＪ"],
+        "9984": ["ソフトバンク", "SoftBank", "ソフトバンクグループ"],
+        "6758": ["ソニー", "SONY"],
+        "4519": ["中外製薬", "中外", "Chugai"],
+    }
+    
+    if sec_code_4 in company_names:
+        for name in company_names[sec_code_4]:
+            for target in search_targets:
+                if name in target:
+                    return True
+    
+    return False
 
 def edinet_pick_latest_doc(results: list, sec_code_4: Optional[str]) -> Optional[dict]:
     def match_sec(r):
@@ -303,44 +386,38 @@ def pick_current_previous(series: Dict[str, Dict[dt.date, float]]) -> Tuple[Dict
     prev = at_date(older)
     return cur, prev, latest, older
 
-def debug_edinet_codes(api_key: str) -> dict:
-    """EDINETに存在する証券コードを調査するデバッグ関数"""
-    today = dt.date.today()
-    all_codes = set()
-    matching_companies = []
+def validate_edinet_api_key(api_key: str) -> tuple[bool, str]:
+    """EDINET APIキーの妥当性を検証"""
+    if not api_key:
+        return False, "EDINET APIキーが設定されていません"
     
-    # 最近の平日を探して調査
-    for i in range(1, 10):
-        d = (today - dt.timedelta(days=i)).isoformat()
-        try:
-            idx = edinet_list_documents(d, api_key)
-            results = idx.get("results", [])
+    try:
+        import requests
+        import datetime
+        
+        # 簡単なAPIコールでキーを検証
+        url = "https://disclosure.edinet-fsa.go.jp/api/v2/documents.json"
+        headers = {"Subscription-Key": api_key}
+        params = {
+            "date": "2023-12-01",  # 過去の確実な日付
+            "type": "2"
+        }
+        
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if "statusCode" in data and data["statusCode"] == 401:
+                return False, f"APIキーが無効です: {data.get('message', '不明なエラー')}"
+            elif "results" in data:
+                return True, "APIキーは有効です"
+            else:
+                return False, f"予期しないレスポンス: {data}"
+        else:
+            return False, f"HTTP {response.status_code}: {response.text}"
             
-            if results:  # データがある日を見つけた
-                print(f"調査日: {d}, ドキュメント数: {len(results)}")
-                
-                for r in results:
-                    sec_code = r.get("secCode")
-                    if sec_code:
-                        all_codes.add(sec_code)
-                    
-                    # トヨタ関連を探す
-                    title = r.get("title") or ""
-                    description = r.get("docDescription") or ""
-                    if any(keyword in title.upper() or keyword in description.upper() 
-                           for keyword in ["TOYOTA", "トヨタ", "豊田"]):
-                        matching_companies.append(f"{description} (証券コード: {sec_code})")
-                
-                break  # 1日分で十分
-                
-        except Exception as e:
-            print(f"日付 {d} でエラー: {e}")
-            continue
-    
-    return {
-        "sample_codes": sorted(list(all_codes)),
-        "matching_companies": matching_companies
-    }
+    except Exception as e:
+        return False, f"APIキー検証中にエラー: {str(e)}"
 
 def autofill_financials_from_edinet(ticker: str, api_key: str) -> Tuple[Dict, Dict, Optional[dt.date], Optional[dt.date]]:
     # 銘柄コードの抽出を改善
