@@ -44,7 +44,23 @@ def render_auto_ingest_section(ticker: str, edinet_api_key: str, price_df: pd.Da
                 st.success(f"取得完了：当期={cur_date} 前期={prev_date}")
                 return current, previous, cur_date, prev_date
             except Exception as e:
-                st.error(f"EDINET 取得エラー: {e}")
+                error_msg = str(e)
+                st.error(f"EDINET 取得エラー:")
+                st.code(error_msg)
+                
+                # ヘルプメッセージ
+                with st.expander("💡 トラブルシューティング"):
+                    st.write("**よくある原因:**")
+                    st.write("- 銘柄コードの形式が正しくない（例: 7203.T が正しい形式）")
+                    st.write("- 該当企業の財務報告書がまだ提出されていない")
+                    st.write("- EDINET API キーが無効")
+                    st.write("- 休日や祝日で新しい書類が提出されていない")
+                    st.write("")
+                    st.write("**推奨する対処法:**")
+                    st.write("1. 銘柄コードを確認する（例: トヨタ = 7203.T）")
+                    st.write("2. 他の大手企業で試してみる（例: 9984.T = ソフトバンク）")
+                    st.write("3. 数日後に再度試す")
+                
                 return None, None, None, None
     
     return None, None, None, None

@@ -66,13 +66,44 @@ def edinet_pick_latest_doc(results: list, sec_code_4: Optional[str]) -> Optional
     def match_sec(r):
         if not sec_code_4:
             return True
-        return (r.get("secCode") == sec_code_4) or (sec_code_4 in (r.get("title") or ""))
+        
+        # より柔軟なマッチング
+        doc_sec_code = r.get("secCode") or ""
+        doc_title = r.get("title") or ""
+        
+        # 完全一致
+        if doc_sec_code == sec_code_4:
+            return True
+        
+        # タイトルに含まれているかチェック
+        if sec_code_4 in doc_title:
+            return True
+        
+        # 証券コードが4桁でない場合の処理
+        if len(sec_code_4) < 4:
+            padded_code = sec_code_4.zfill(4)
+            if doc_sec_code == padded_code or padded_code in doc_title:
+                return True
+        
+        return False
+    
     # 優先度順に絞り込み
-    for ord_code, form_code, _ in EDINET_FORMS:
+    all_matches = []
+    for ord_code, form_code, form_name in EDINET_FORMS:
         tier = [r for r in results if r.get("ordinanceCode")==ord_code and r.get("formCode")==form_code and match_sec(r)]
         if tier:
             tier.sort(key=lambda x: (x.get("submitDateTime") or x.get("periodEnd") or ""), reverse=True)
+            print(f"見つかった書類: {form_name} - {tier[0].get('docDescription', 'N/A')}")
             return tier[0]
+    
+    # マッチしない場合のデバッグ情報
+    if sec_code_4:
+        matching_docs = [r for r in results if match_sec(r)]
+        print(f"証券コード {sec_code_4} に一致する書類: {len(matching_docs)}件")
+        if matching_docs:
+            for doc in matching_docs[:3]:  # 最初の3件を表示
+                print(f"  - {doc.get('docDescription', 'N/A')} (証券コード: {doc.get('secCode', 'N/A')})")
+    
     return None
 
 def edinet_download_zip(doc_id: str, api_key: str) -> bytes:
@@ -201,22 +232,46 @@ def pick_current_previous(series: Dict[str, Dict[dt.date, float]]) -> Tuple[Dict
     return cur, prev, latest, older
 
 def autofill_financials_from_edinet(ticker: str, api_key: str) -> Tuple[Dict, Dict, Optional[dt.date], Optional[dt.date]]:
-    sec4 = "".join([c for c in ticker.split(".")[0] if c.isdigit()])[-4:] or None
+    # 銘柄コードの抽出を改善
+    ticker_clean = ticker.split(".")[0]  # "7203.T" -> "7203"
+    sec4 = ticker_clean.zfill(4) if ticker_clean.isdigit() else None  # "7203" -> "7203"
+    
     today = dt.date.today()
     chosen = None
-    # 最大30日遡り（休日考慮の緩衝）
-    for i in range(0, 30):
+    search_days = 90  # 3ヶ月まで拡張
+    
+    # デバッグ情報
+    print(f"銘柄コード検索: {ticker} -> {sec4}")
+    
+    # 最大90日遡り（より長い期間で検索）
+    for i in range(0, search_days):
         d = (today - dt.timedelta(days=i)).isoformat()
         try:
             idx = edinet_list_documents(d, api_key)
-        except Exception:
+            results = idx.get("results", [])
+            
+            # デバッグ: その日の総ドキュメント数
+            if i < 5:  # 最初の5日だけログ出力
+                print(f"日付 {d}: {len(results)}件のドキュメント")
+            
+            doc = edinet_pick_latest_doc(results, sec4)
+            if doc:
+                chosen = doc
+                print(f"ドキュメント発見: {doc.get('docDescription', 'N/A')} (日付: {d})")
+                break
+        except Exception as e:
+            if i < 5:  # 最初の5日だけエラーログ
+                print(f"日付 {d} でエラー: {e}")
             continue
-        doc = edinet_pick_latest_doc(idx.get("results", []), sec4)
-        if doc:
-            chosen = doc
-            break
+    
     if not chosen:
-        raise RuntimeError("EDINETで該当ドキュメントが見つかりませんでした。期間や銘柄を見直してください。")
+        # より詳細なエラーメッセージ
+        error_msg = f"EDINETで該当ドキュメントが見つかりませんでした。\n"
+        error_msg += f"検索した銘柄コード: {sec4}\n"
+        error_msg += f"検索期間: {search_days}日間\n"
+        error_msg += f"銘柄コードが正しいか確認してください（例: 7203.T）"
+        raise RuntimeError(error_msg)
+    
     zipb = edinet_download_zip(chosen["docID"], api_key)
     series = parse_xbrl_series(zipb)
     cur, prev, cur_date, prev_date = pick_current_previous(series)
