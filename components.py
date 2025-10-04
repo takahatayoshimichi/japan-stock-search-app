@@ -34,38 +34,59 @@ def render_auto_ingest_section(ticker: str, edinet_api_key: str, price_df: pd.Da
         st.info("EDINET API Key を .env に設定してください。")
         return None, None, None, None
     
-    if st.button("EDINET から自動取得して計算", key="edinet_fetch_button"):
-        with st.spinner("EDINET からデータを取得中..."):
-            try:
-                current, previous, cur_date, prev_date = autofill_financials_from_edinet(ticker, edinet_api_key)
-                # 株価を充填
-                if price_df is not None and not price_df.empty:
-                    current["price"] = float(price_df["close"].iloc[-1])
-                st.success(f"取得完了：当期={cur_date} 前期={prev_date}")
-                return current, previous, cur_date, prev_date
-            except Exception as e:
-                error_msg = str(e)
-                st.error(f"EDINET 取得エラー:")
-                st.code(error_msg)
-                
-                # ヘルプメッセージ
-                with st.expander("💡 トラブルシューティング"):
-                    st.write("**よくある原因:**")
-                    st.write("- 銘柄コードの形式が正しくない（例: 7203.T が正しい形式）")
-                    st.write("- 該当企業の財務報告書がまだ提出されていない")
-                    st.write("- EDINET API キーが無効")
-                    st.write("- 休日や祝日で新しい書類が提出されていない")
-                    st.write("")
-                    st.write("**推奨する対処法:**")
-                    st.write("1. 以下の銘柄で試してみる:")
-                    st.write("   - 7203.T (トヨタ自動車)")
-                    st.write("   - 9984.T (ソフトバンクグループ)")
-                    st.write("   - 8306.T (三菱UFJフィナンシャル・グループ)")
-                    st.write("   - 4519.T (中外製薬)")
-                    st.write("2. 銘柄コードを4桁で入力してみる（例: 7203）")
-                    st.write("3. 数日後に再度試す")
-                
-                return None, None, None, None
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        if st.button("EDINET から自動取得して計算", key="edinet_fetch_button"):
+            with st.spinner("EDINET からデータを取得中..."):
+                try:
+                    current, previous, cur_date, prev_date = autofill_financials_from_edinet(ticker, edinet_api_key)
+                    # 株価を充填
+                    if price_df is not None and not price_df.empty:
+                        current["price"] = float(price_df["close"].iloc[-1])
+                    st.success(f"取得完了：当期={cur_date} 前期={prev_date}")
+                    return current, previous, cur_date, prev_date
+                except Exception as e:
+                    error_msg = str(e)
+                    st.error(f"EDINET 取得エラー:")
+                    st.code(error_msg)
+                    
+                    # ヘルプメッセージ
+                    with st.expander("💡 トラブルシューティング"):
+                        st.write("**よくある原因:**")
+                        st.write("- 銘柄コードの形式が正しくない（例: 7203.T が正しい形式）")
+                        st.write("- 該当企業の財務報告書がまだ提出されていない")
+                        st.write("- EDINET API キーが無効")
+                        st.write("- 休日や祝日で新しい書類が提出されていない")
+                        st.write("")
+                        st.write("**推奨する対処法:**")
+                        st.write("1. 以下の銘柄で試してみる:")
+                        st.write("   - 7203.T (トヨタ自動車)")
+                        st.write("   - 9984.T (ソフトバンクグループ)")
+                        st.write("   - 8306.T (三菱UFJフィナンシャル・グループ)")
+                        st.write("   - 4519.T (中外製薬)")
+                        st.write("2. 銘柄コードを4桁で入力してみる（例: 7203）")
+                        st.write("3. 数日後に再度試す")
+                    
+                    return None, None, None, None
+    
+    with col2:
+        if st.button("🔍 EDINET検索テスト", key="edinet_debug_button"):
+            with st.spinner("EDINETの証券コードを調査中..."):
+                try:
+                    from utils import debug_edinet_codes
+                    debug_info = debug_edinet_codes(edinet_api_key)
+                    
+                    st.write("**EDINETに存在する証券コードの例:**")
+                    st.code("\n".join(debug_info["sample_codes"][:20]))
+                    
+                    if debug_info["matching_companies"]:
+                        st.write("**類似企業:**")
+                        for company in debug_info["matching_companies"][:5]:
+                            st.write(f"- {company}")
+                    
+                except Exception as e:
+                    st.error(f"調査エラー: {e}")
     
     return None, None, None, None
 

@@ -310,6 +310,45 @@ def pick_current_previous(series: Dict[str, Dict[dt.date, float]]) -> Tuple[Dict
     prev = at_date(older)
     return cur, prev, latest, older
 
+def debug_edinet_codes(api_key: str) -> dict:
+    """EDINETに存在する証券コードを調査するデバッグ関数"""
+    today = dt.date.today()
+    all_codes = set()
+    matching_companies = []
+    
+    # 最近の平日を探して調査
+    for i in range(1, 10):
+        d = (today - dt.timedelta(days=i)).isoformat()
+        try:
+            idx = edinet_list_documents(d, api_key)
+            results = idx.get("results", [])
+            
+            if results:  # データがある日を見つけた
+                print(f"調査日: {d}, ドキュメント数: {len(results)}")
+                
+                for r in results:
+                    sec_code = r.get("secCode")
+                    if sec_code:
+                        all_codes.add(sec_code)
+                    
+                    # トヨタ関連を探す
+                    title = r.get("title") or ""
+                    description = r.get("docDescription") or ""
+                    if any(keyword in title.upper() or keyword in description.upper() 
+                           for keyword in ["TOYOTA", "トヨタ", "豊田"]):
+                        matching_companies.append(f"{description} (証券コード: {sec_code})")
+                
+                break  # 1日分で十分
+                
+        except Exception as e:
+            print(f"日付 {d} でエラー: {e}")
+            continue
+    
+    return {
+        "sample_codes": sorted(list(all_codes)),
+        "matching_companies": matching_companies
+    }
+
 def autofill_financials_from_edinet(ticker: str, api_key: str) -> Tuple[Dict, Dict, Optional[dt.date], Optional[dt.date]]:
     # 銘柄コードの抽出を改善
     ticker_clean = ticker.split(".")[0]  # "6758.T" -> "6758"
