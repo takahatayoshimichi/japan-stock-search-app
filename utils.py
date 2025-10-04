@@ -64,80 +64,73 @@ def edinet_list_documents(date: str, api_key: str) -> dict:
 
 def edinet_pick_latest_doc_debug(results: list, sec_code_4: Optional[str], search_date: str) -> Optional[dict]:
     """デバッグ情報付きのドキュメント検索関数"""
-    def match_sec(r):
-        if not sec_code_4:
-            return True
-        
-        # より柔軟なマッチング
-        doc_sec_code = r.get("secCode") or ""
-        doc_title = r.get("title") or ""
-        doc_description = r.get("docDescription") or ""
-        
-        # 検索候補となる文字列
-        search_targets = [doc_sec_code, doc_title, doc_description]
-        
-        # 様々なパターンでマッチング
-        patterns_to_check = [
-            sec_code_4,                    # 7203
-            sec_code_4.zfill(4),          # 7203
-            f"{sec_code_4}.T",            # 7203.T
-            f"{sec_code_4}0",             # 72030（EDINETで使われることがある）
-        ]
-        
-        for pattern in patterns_to_check:
-            for target in search_targets:
-                if pattern in target:
-                    return True
-        
-        return False
     
-    # 該当する証券コードのドキュメントを全て収集
-    matching_docs = [r for r in results if match_sec(r)]
-    print(f"日付 {search_date}: 証券コード {sec_code_4} に一致するドキュメント: {len(matching_docs)}件")
-    
-    # マッチしない場合は、類似する証券コードを表示
-    if not matching_docs and sec_code_4:
-        similar_codes = set()
-        for r in results[:50]:  # 最初の50件をチェック
-            sec_code = r.get("secCode")
-            if sec_code and sec_code.startswith(sec_code_4[0]):  # 最初の数字が同じもの
-                similar_codes.add(sec_code)
-        
-        if similar_codes:
-            print(f"  類似する証券コード例: {sorted(list(similar_codes))[:10]}")
-        
-        # 企業名での検索も試す
-        company_names = {
-            "7203": ["トヨタ", "TOYOTA"],
-            "8306": ["三菱UFJ", "MUFG"],
-            "9984": ["ソフトバンク", "SoftBank"],
-            "6758": ["ソニー", "SONY"],
-        }
-        
-        if sec_code_4 in company_names:
-            for name in company_names[sec_code_4]:
-                name_matches = [r for r in results if name in (r.get("title") or "") or name in (r.get("docDescription") or "")]
-                if name_matches:
-                    print(f"  企業名 '{name}' での検索: {len(name_matches)}件")
-                    # 企業名でマッチした場合は、最初のものを返す
-                    for ord_code, form_code, form_name in EDINET_FORMS:
-                        tier = [r for r in name_matches if r.get("ordinanceCode")==ord_code and r.get("formCode")==form_code]
-                        if tier:
-                            tier.sort(key=lambda x: (x.get("submitDateTime") or x.get("periodEnd") or ""), reverse=True)
-                            print(f"  企業名で見つかった書類: {form_name} - {tier[0].get('docDescription', 'N/A')}")
-                            return tier[0]
-    
-    if matching_docs:
-        for i, doc in enumerate(matching_docs[:3]):  # 最初の3件を表示
-            print(f"  {i+1}. {doc.get('docDescription', 'N/A')} (証券コード: {doc.get('secCode', 'N/A')}, 書類コード: {doc.get('formCode', 'N/A')})")
-    
-    # 優先度順に絞り込み
+    # まず、有価証券報告書、四半期報告書、半期報告書を探す（証券コード無視）
+    target_forms = []
     for ord_code, form_code, form_name in EDINET_FORMS:
-        tier = [r for r in matching_docs if r.get("ordinanceCode")==ord_code and r.get("formCode")==form_code]
-        if tier:
-            tier.sort(key=lambda x: (x.get("submitDateTime") or x.get("periodEnd") or ""), reverse=True)
-            print(f"見つかった書類: {form_name} - {tier[0].get('docDescription', 'N/A')}")
-            return tier[0]
+        matching_forms = [r for r in results if r.get("ordinanceCode")==ord_code and r.get("formCode")==form_code]
+        if matching_forms:
+            target_forms.extend([(form_name, doc) for doc in matching_forms])
+    
+    print(f"日付 {search_date}: 対象書類の総数: {len(target_forms)}件")
+    
+    if target_forms and sec_code_4:
+        # 証券コードや企業名での絞り込み
+        def match_company(doc):
+            doc_sec_code = doc.get("secCode") or ""
+            doc_title = doc.get("title") or ""
+            doc_description = doc.get("docDescription") or ""
+            
+            # 検索候補となる文字列
+            search_targets = [doc_sec_code, doc_title, doc_description]
+            
+            # 証券コードでのマッチング
+            patterns_to_check = [
+                sec_code_4,                    # 4519
+                sec_code_4.zfill(4),          # 4519
+                f"{sec_code_4}.T",            # 4519.T
+                f"{sec_code_4}0",             # 45190
+            ]
+            
+            for pattern in patterns_to_check:
+                for target in search_targets:
+                    if pattern in target:
+                        return True
+            
+            # 企業名での検索
+            company_names = {
+                "7203": ["トヨタ", "TOYOTA", "豊田"],
+                "8306": ["三菱UFJ", "MUFG", "三菱ＵＦＪ"],
+                "9984": ["ソフトバンク", "SoftBank", "ソフトバンクグループ"],
+                "6758": ["ソニー", "SONY"],
+                "4519": ["中外製薬", "中外", "Chugai"],
+            }
+            
+            if sec_code_4 in company_names:
+                for name in company_names[sec_code_4]:
+                    for target in search_targets:
+                        if name in target:
+                            return True
+            
+            return False
+        
+        # 企業名/証券コードでマッチングを試行
+        matching_companies = [(form_name, doc) for form_name, doc in target_forms if match_company(doc)]
+        
+        if matching_companies:
+            print(f"  企業マッチング成功: {len(matching_companies)}件")
+            for i, (form_name, doc) in enumerate(matching_companies[:3]):
+                print(f"    {i+1}. {form_name}: {doc.get('docDescription', 'N/A')} (証券コード: {doc.get('secCode', 'N/A')})")
+            
+            # 最も新しいものを返す
+            best_match = max(matching_companies, key=lambda x: x[1].get("submitDateTime") or x[1].get("periodEnd") or "")
+            return best_match[1]
+        else:
+            print(f"  企業マッチング失敗。利用可能な企業例:")
+            # ランダムに3つの企業例を表示
+            sample_companies = target_forms[:10]  # 最初の10件から
+            for i, (form_name, doc) in enumerate(sample_companies[:3]):
+                print(f"    例{i+1}: {doc.get('docDescription', 'N/A')} (証券コード: {doc.get('secCode', 'N/A')})")
     
     return None
 
@@ -351,15 +344,17 @@ def debug_edinet_codes(api_key: str) -> dict:
 
 def autofill_financials_from_edinet(ticker: str, api_key: str) -> Tuple[Dict, Dict, Optional[dt.date], Optional[dt.date]]:
     # 銘柄コードの抽出を改善
-    ticker_clean = ticker.split(".")[0]  # "6758.T" -> "6758"
-    sec4 = ticker_clean.zfill(4) if ticker_clean.isdigit() else None  # "6758" -> "6758"
+    if ticker.upper() == "ANY":
+        sec4 = None  # 証券コード無視モード
+        print("証券コード無視モード: 利用可能な任意の企業データを取得します")
+    else:
+        ticker_clean = ticker.split(".")[0]  # "6758.T" -> "6758"
+        sec4 = ticker_clean.zfill(4) if ticker_clean.isdigit() else None  # "6758" -> "6758"
+        print(f"銘柄コード検索: {ticker} -> {sec4}")
     
     today = dt.date.today()
     chosen = None
     search_days = 90  # 3ヶ月まで拡張
-    
-    # デバッグ情報
-    print(f"銘柄コード検索: {ticker} -> {sec4}")
     
     # まず最近の数日間で詳細にチェック
     test_results = []
@@ -397,13 +392,20 @@ def autofill_financials_from_edinet(ticker: str, api_key: str) -> Tuple[Dict, Di
     
     if not chosen:
         # より詳細なエラーメッセージ
-        error_msg = f"EDINETで該当ドキュメントが見つかりませんでした。\n"
-        error_msg += f"検索した銘柄コード: {sec4}\n"
-        error_msg += f"検索期間: {search_days}日間\n"
-        error_msg += f"銘柄コードが正しいか確認してください（例: 7203.T）\n\n"
+        if sec4 is None:
+            error_msg = f"EDINET で利用可能な企業データが見つかりませんでした。\n"
+            error_msg += f"検索期間: {search_days}日間\n"
+        else:
+            error_msg = f"EDINETで該当ドキュメントが見つかりませんでした。\n"
+            error_msg += f"検索した銘柄コード: {sec4}\n"
+            error_msg += f"検索期間: {search_days}日間\n"
+            error_msg += f"銘柄コードが正しいか確認してください（例: 7203.T）\n\n"
+        
         error_msg += "検索結果:\n"
         for date, count in test_results:
             error_msg += f"  {date}: {count}件のドキュメント\n"
+        
+        error_msg += "\n💡 'ANY' と入力すると、利用可能な任意の企業のデータでテストできます。"
         raise RuntimeError(error_msg)
     
     zipb = edinet_download_zip(chosen["docID"], api_key)
